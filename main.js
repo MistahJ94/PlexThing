@@ -10,8 +10,7 @@ const { parseString } = require('xml2js');
 const PlexAPI = require('plex-api');
 const dgram = require('dgram');
 
-app.commandLine.appendSwitch('allow-insecure-localhost');
-app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors');
+// Keep Chromium's default transport and CORS protections enabled.
 
 let mainWindow;
 let plexClient = null;
@@ -297,11 +296,15 @@ function startStatusBroadcast() {
 // --- IPC
 ipcMain.handle("get-config", async () => loadConfig());
 ipcMain.handle("connect-plex", async (e, config) => {
-  saveConfig(config);
   try {
-    const { hostname, port } = new URL(config.plex_server_url);
-    plexClient = new PlexAPI({ hostname, port: port || "32400", token: config.plex_token });
-    await plexClient.query("/");
+    const url = new URL(config.plex_server_url);
+    if (!["http:", "https:"].includes(url.protocol) || !url.hostname || !config.plex_token) {
+      throw new Error("A valid HTTP(S) Plex URL and token are required.");
+    }
+    const candidate = new PlexAPI({ hostname: url.hostname, port: url.port || (url.protocol === "https:" ? "443" : "32400"), token: config.plex_token, https: url.protocol === "https:" });
+    await candidate.query("/");
+    plexClient = candidate;
+    saveConfig(config);
     return { success: true };
   } catch (e) {
     console.error("Plex connect error:", e);
@@ -310,6 +313,9 @@ ipcMain.handle("connect-plex", async (e, config) => {
 });
 ipcMain.handle("get-server-status", async () => getServerStatus());
 ipcMain.handle("manual-adb-reverse", async () => {
+  if (process.env.PLEXTHING_ENABLE_DEVICE_WRITES !== "1") {
+    return { success: false, error: "Device commands are disabled by default." };
+  }
   return new Promise(resolve => {
     if (!fs.existsSync(ADB_PATH)) {
       resolve({ success: false, error: "ADB binary not found." });
@@ -322,6 +328,9 @@ ipcMain.handle("manual-adb-reverse", async () => {
   });
 });
 ipcMain.handle("push-build", async () => {
+  if (process.env.PLEXTHING_ENABLE_DEVICE_WRITES !== "1") {
+    return { success: false, error: "Device writes are disabled by default. Explicitly enable PLEXTHING_ENABLE_DEVICE_WRITES=1 only after validating a recovery plan." };
+  }
   return new Promise((resolve) => {
     let buildPath;
 
