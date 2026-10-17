@@ -19,11 +19,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (manualAdbBtn) manualAdbBtn.innerText = "Connect to Car Thing";
 
   // Load saved config
-  const savedConfig = localStorage.getItem('plexConfig');
-  if (savedConfig) {
-    const config = JSON.parse(savedConfig);
+  // Load settings from the application rather than duplicating tokens in browser storage.
+  try {
+    const config = await window.api.getConfig();
     plexUrlInput.value = config.plex_server_url || "";
     plexTokenInput.value = config.plex_token || "";
+  } catch (error) {
+    console.error('Unable to load saved Plex configuration:', error);
   }
 
   connectBtn.addEventListener('click', async () => {
@@ -31,8 +33,6 @@ window.addEventListener('DOMContentLoaded', async () => {
       plex_server_url: plexUrlInput.value.trim(),
       plex_token: plexTokenInput.value.trim()
     };
-    localStorage.setItem('plexConfig', JSON.stringify(config));
-
     const result = await window.api.connectPlex(config);
     if (result.success) {
       plexStatusDiv.innerText = "Plex Server Status: Connected";
